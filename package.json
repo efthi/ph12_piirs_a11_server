@@ -1,0 +1,22 @@
+{
+  "name": "piirs_server",
+  "version": "1.0.0",
+  "description": "Public Infrastructure Issue Reporting System Server",
+  "main": "index.js",
+  "scripts": {
+    "start": "",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/efthi/ph12_piirs_a11_server.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/efthi/ph12_piirs_a11_server/issues"
+  },
+  "homepage": "https://github.com/efthi/ph12_piirs_a11_server#readme"
+}
