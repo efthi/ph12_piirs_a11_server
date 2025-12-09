@@ -61,12 +61,23 @@ async function run() {
       res.send("Express Server is Running!");
     });
 
+    //DB ইউজার ডেটা সেভ করতে 
+    app.post("/storeuserdata", async (req,res)=>{
+      const userInfo = req.body;
+      console.log(userInfo.name, userInfo.email, userInfo.imgURL);
+      const result = await userData.insertOne(userInfo);
+       res.send(result);
+      
+    });
+
+    //test api
     app.get("/get-test", async (req, res) => {
       const packet = issueData.find(); //packet জাস্ট নাম দেওয়া হয়েছে
       const result = await packet.toArray();
       res.send(result);
     });
 
+    //test api
     app.post("/get-post", async (req, res) => {
       const newIssue = req.body;
       console.log(newIssue);
@@ -74,9 +85,6 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/", (req, res) => {
-      res.send("Express Server is Running!");
-    });
   } catch (err) {
     console.error(err);
   }
