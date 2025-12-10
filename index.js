@@ -51,7 +51,7 @@ async function run() {
     //উপরে MongoDB এর client কে কানেক্ট করলাম
     await client.connect();
     const piirsDB = client.db("piirsDB"); //database বানাইলাম, থাকলে আবার ক্রিয়েট হবে না
-    const issueData = piirsDB.collection("base"); // collection বানাইলাম, ....
+    const issueData = piirsDB.collection("issueData"); // collection বানাইলাম, ....
     const userData = piirsDB.collection("userData"); //২য় collection বানাইলাম
     //Connection test code
     await client.db("admin").command({ ping: 1 });
@@ -61,13 +61,20 @@ async function run() {
       res.send("Express Server is Running!");
     });
 
-    //DB ইউজার ডেটা সেভ করতে 
-    app.post("/storeuserdata", async (req,res)=>{
+    //DB ইউজার ডেটা সেভ করতে
+    app.post("/storeuserdata", async (req, res) => {
       const userInfo = req.body;
-      console.log(userInfo.name, userInfo.email, userInfo.imgURL);
+      console.log(
+        userInfo.uid,
+        userInfo.name,
+        userInfo.email,
+        userInfo.imgURL,
+        userInfo.role,
+        userInfo.createdAt,
+        userInfo.isBlocked
+      );
       const result = await userData.insertOne(userInfo);
-       res.send(result);
-      
+      res.send(result);
     });
 
     //test api
@@ -85,6 +92,17 @@ async function run() {
       res.send(result);
     });
 
+    /** Issue CURD API Starts */
+
+    app.post("/api/record-issue", async (req, res) => {
+      const recordIssue = req.body;
+      console.log(recordIssue);
+      const result = await issueData.insertOne(recordIssue);
+      res.send(result);
+      
+    })
+
+    /** Issue CURD API Ends */
   } catch (err) {
     console.error(err);
   }
