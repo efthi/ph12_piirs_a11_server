@@ -93,14 +93,31 @@ async function run() {
     });
 
     /** Issue CURD API Starts */
-
+    //create a issue
     app.post("/api/record-issue", async (req, res) => {
       const recordIssue = req.body;
       console.log(recordIssue);
-      const result = await issueData.insertOne(recordIssue);
-      res.send(result);
+      //const result = await issueData.insertOne(recordIssue);
+      //res.send(result);
+      res.send(recordIssue);
       
-    })
+    });
+    
+    //get all issue
+    app.get("/api/all-issue", async (req, res)=> {
+     const result = await issueData.find().toArray();
+     res.send(result);
+    });
+
+    //get single issue
+    app.get("/api/issue/:id");
+
+    //Update issue 
+    //app.patch("/api/update/:id");
+
+    //delete issue
+    //app.delete("/api/remove-issue/:id");
+
 
     /** Issue CURD API Ends */
   } catch (err) {
