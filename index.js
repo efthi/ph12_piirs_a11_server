@@ -100,28 +100,34 @@ async function run() {
       //const result = await issueData.insertOne(recordIssue);
       //res.send(result);
       res.send(recordIssue);
-      
     });
-    
+
     //get all issue
-    app.get("/api/all-issue", async (req, res)=> {
-     const result = await issueData.find().toArray();
-     res.send(result);
+    app.get("/api/all-issue", async (req, res) => {
+      const result = await issueData.find().toArray();
+      res.send(result);
     });
 
     //get single issue
     app.get("/api/issue/:id", async (req, res) => {
       const id = req.params.id;
-      const result = await issueData.findOne({_id: new ObjectId(id)});
+      const result = await issueData.findOne({ _id: new ObjectId(id) });
       res.send(result);
     });
 
-    //Update issue 
-    //app.patch("/api/update/:id");
+    //Update issue
+    app.patch("/api/update/:id", async (req, res) => {
+      const id = req.params.id;
+      const updateIssue = req.body;
+      const query = { _id: new ObjectId(id) };
+      const applyUpdate = { $set: { ...updateIssue } };
+      const option = {};
+      const result = await issueData.updateOne(query, applyUpdate, option);
+      res.send(result);
+    });
 
     //delete issue
     //app.delete("/api/remove-issue/:id");
-
 
     /** Issue CURD API Ends */
   } catch (err) {
