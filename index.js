@@ -110,7 +110,11 @@ async function run() {
     });
 
     //get single issue
-    app.get("/api/issue/:id");
+    app.get("/api/issue/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await issueData.findOne({_id: new ObjectId(id)});
+      res.send(result);
+    });
 
     //Update issue 
     //app.patch("/api/update/:id");
