@@ -97,8 +97,8 @@ async function run() {
     app.post("/api/record-issue", async (req, res) => {
       const recordIssue = req.body;
       console.log(recordIssue);
-      //const result = await issueData.insertOne(recordIssue);
-      //res.send(result);
+      const result = await issueData.insertOne(recordIssue);
+      res.send(result);
       res.send(recordIssue);
     });
 
@@ -127,7 +127,12 @@ async function run() {
     });
 
     //delete issue
-    //app.delete("/api/remove-issue/:id");
+    app.delete("/api/remove-issue/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id)};
+      const result = await issueData.deleteOne(query);
+      res.send(result);
+    });
 
     /** Issue CURD API Ends */
   } catch (err) {
