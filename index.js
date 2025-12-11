@@ -12,8 +12,14 @@ require("dotenv").config();
 const app = express();
 
 //app using express, json, cors এগুলো ফাংশনাল করা হচ্ছে
+
+const corsOptions = {
+  origin: "http://localhost:5173",
+  credentials: true,
+};
+app.use(cors(corsOptions));
 app.use(express.json());
-app.use(cors());
+
 
 /**
  * Declare Port!
