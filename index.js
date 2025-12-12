@@ -14,9 +14,10 @@ const app = express();
 //app using express, json, cors এগুলো ফাংশনাল করা হচ্ছে
 
 const corsOptions = {
-  origin: "http://localhost:5173",
+  origin: process.env.CLIENT_URI,
   credentials: true,
 };
+
 app.use(cors(corsOptions));
 app.use(express.json());
 
