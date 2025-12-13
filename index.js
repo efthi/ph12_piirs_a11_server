@@ -147,6 +147,49 @@ async function run() {
     /** Issue CURD API Ends */
     /**......................API Section Ends....................... */
 
+    /** Get User Data API */
+    app.get("/api/get-user-data/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+        const user = await userData.findOne({ email });
+        if (!user) {
+          return res.status(404).json({ message: "User not found" });
+        }
+        res.status(200).json(user);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    /** Get User API Ends */
+
+    /** Update User Data in DB */
+    app.patch('/api/update-user/', async (req, res) =>{
+      try {
+        const query = {uid: req.body.uid};
+        const updateData = {
+          $set: {
+            name:req.body.name,
+            imgURL:req.body.imgURL,
+          },
+        };
+        console.log(query);
+        
+        const options = {upsert: false};
+        const result = await userData.updateOne(query, updateData, options)
+    
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found!" });
+        }
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ Error: err.message });
+      }
+    
+
+    });
+    /** */
+
     /** STRIPE API Starts */
     app.post("/create-checkout-sessions", async (req, res) => {
       try {
