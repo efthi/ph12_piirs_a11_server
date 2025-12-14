@@ -144,6 +144,18 @@ async function run() {
       res.send(result);
     });
 
+    //get user specific issues
+    app.get("/api/issues-by-user/:email", async (req, res) => {
+      try {
+        const query = await req.params.email;
+        console.log(query);
+        res.send(query);
+        res.status(200).json(user);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
     /** Issue CURD API Ends */
     /**......................API Section Ends....................... */
 
@@ -164,20 +176,20 @@ async function run() {
     /** Get User API Ends */
 
     /** Update User Data in DB */
-    app.patch('/api/update-user/', async (req, res) =>{
+    app.patch("/api/update-user/", async (req, res) => {
       try {
-        const query = {uid: req.body.uid};
+        const query = { uid: req.body.uid };
         const updateData = {
           $set: {
-            name:req.body.name,
-            imgURL:req.body.imgURL,
+            name: req.body.name,
+            imgURL: req.body.imgURL,
           },
         };
         console.log(query);
-        
-        const options = {upsert: false};
-        const result = await userData.updateOne(query, updateData, options)
-    
+
+        const options = { upsert: false };
+        const result = await userData.updateOne(query, updateData, options);
+
         if (result.matchedCount === 0) {
           return res.status(404).send({ message: "User not found!" });
         }
@@ -185,8 +197,6 @@ async function run() {
       } catch (err) {
         res.status(500).send({ Error: err.message });
       }
-    
-
     });
     /** */
 
