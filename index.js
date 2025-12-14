@@ -105,11 +105,16 @@ async function run() {
     /** Issue CURD API Starts */
     //create a issue
     app.post("/api/record-issue", async (req, res) => {
-      const recordIssue = req.body;
-      console.log(recordIssue);
-      const result = await issueData.insertOne(recordIssue);
-      res.send(result);
-      res.send(recordIssue);
+      try {
+        const recordIssue = req.body;
+        console.log(recordIssue);
+        const result = await issueData.insertOne(recordIssue);
+        res.send(result);
+        res.status(200).send(recordIssue);
+      } catch(err){
+        console.error("Error in recording an issue!");
+        res.status(500).json({Error : err.message});
+      }
     });
 
     //get all issue
@@ -127,13 +132,18 @@ async function run() {
 
     //Update issue
     app.patch("/api/update/:id", async (req, res) => {
-      const id = req.params.id;
-      const updateIssue = req.body;
-      const query = { _id: new ObjectId(id) };
-      const applyUpdate = { $set: { ...updateIssue } };
-      const option = {};
-      const result = await issueData.updateOne(query, applyUpdate, option);
-      res.send(result);
+      try {
+        const id = req.params.id;
+        const updateIssue = req.body;
+        const query = { _id: new ObjectId(id) };
+        const applyUpdate = { $set: { ...updateIssue } };
+        const option = {};
+        const result = await issueData.updateOne(query, applyUpdate, option);
+        res.status(200).send(result);
+      } catch (err) {
+        console.error("Error updating issue!", err);
+        res.status(500).json({ Error: err.message });
+      }
     });
 
     //delete issue
@@ -147,11 +157,15 @@ async function run() {
     //get user specific issues
     app.get("/api/issues-by-user/:email", async (req, res) => {
       try {
-        const query = await req.params.email;
-        console.log(query);
-        res.send(query);
-        res.status(200).json(user);
+        const email = req.params.email;
+        const issues = await issueData
+          .find({
+            "reportedBy.email": email,
+          })
+          .toArray();
+        res.status(200).json(issues);
       } catch (err) {
+        console.error("Error fetching issues:", err);
         res.status(500).json({ error: err.message });
       }
     });
