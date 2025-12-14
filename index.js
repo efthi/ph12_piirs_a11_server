@@ -186,7 +186,7 @@ async function run() {
             "reportedBy.email": email,
           })
           .toArray();
-        return res.status(201).json({ success: true, data: issues });;
+        return res.status(201).send(issues);
       } catch (err) {
         console.error("Error fetching issues:", err);
         return res.status(500).json({ success: false, message: err.message });
@@ -258,7 +258,7 @@ async function run() {
         if (!user) {
           return res.status(404).json({ message: "User not found" });
         }
-        res.status(200).json(user);
+        res.status(200).send(user);
       } catch (err) {
         res.status(500).json({ error: err.message });
       }
