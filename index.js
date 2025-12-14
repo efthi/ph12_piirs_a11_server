@@ -61,12 +61,14 @@ async function run() {
     //উপরে MongoDB এর client কে কানেক্ট করলাম
     await client.connect();
     const piirsDB = client.db("piirsDB"); //database বানাইলাম, থাকলে আবার ক্রিয়েট হবে না
-    const issueData = piirsDB.collection("issueData"); // collection বানাইলাম, ....
-    const userData = piirsDB.collection("userData"); //২য় collection বানাইলাম
+    const userData = piirsDB.collection("userData"); // collection বানাইলাম
+    const issueData = piirsDB.collection("issueData"); // ২য় collection বানাইলাম, ....
+    //await issueData.createIndex({tracking:1}, {unique: true}); // এই লাইনটা সার্চ করে যুক্ত করা হয়েছে যাতে ট্র্যাকিং নাম্বার জেনারেটর ফাংশন থেকে জেনারেট হওয়া নাম্বার ইউনিক থাকে
     //Connection test code
     await client.db("admin").command({ ping: 1 });
     console.log("pinged your deployment. Connected to MongoDB!");
 
+    //সার্ভার রুট পেইজ
     app.get("/", (req, res) => {
       res.send("Express Server is Running!");
     });
@@ -106,28 +108,45 @@ async function run() {
     //create a issue
     app.post("/api/record-issue", async (req, res) => {
       try {
-        const recordIssue = req.body;
-        console.log(recordIssue);
+        const getIssue = req.body;
+        const recordIssue = { tracking: generateTrack(), ...getIssue };
         const result = await issueData.insertOne(recordIssue);
-        res.send(result);
-        res.status(200).send(recordIssue);
-      } catch(err){
-        console.error("Error in recording an issue!");
-        res.status(500).json({Error : err.message});
+        return res.status(201).json({
+          success: true,
+          insertedId: result.insertedId,
+          tracking: recordIssue.tracking,
+        });
+      } catch (err) {
+        //mongodb যদি tracking exsisting পায় সেটার জন্য
+        if (err.code === 11000) {
+          return res.status(409).json({
+            success: false,
+            message: "Tracking No Conflict, Please Try againa!",
+          });
+        }
+        return res.status(500).json({ success: false, message: err.message });
       }
     });
 
     //get all issue
     app.get("/api/all-issue", async (req, res) => {
-      const result = await issueData.find().toArray();
-      res.send(result);
+      try {
+        const result = await issueData.find().toArray();
+        return res.status(201).send(result);
+      } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+      }
     });
 
     //get single issue
     app.get("/api/issue/:id", async (req, res) => {
-      const id = req.params.id;
-      const result = await issueData.findOne({ _id: new ObjectId(id) });
-      res.send(result);
+      try {
+        const id = req.params.id;
+        const result = await issueData.findOne({ _id: new ObjectId(id) });
+        return res.status(201).send(result);
+      } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+      }
     });
 
     //Update issue
@@ -139,19 +158,23 @@ async function run() {
         const applyUpdate = { $set: { ...updateIssue } };
         const option = {};
         const result = await issueData.updateOne(query, applyUpdate, option);
-        res.status(200).send(result);
+        return res.status(201).json({ success: true, data: result });
       } catch (err) {
         console.error("Error updating issue!", err);
-        res.status(500).json({ Error: err.message });
+        return res.status(500).json({ success: false, message: err.message });
       }
     });
 
     //delete issue
     app.delete("/api/remove-issue/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await issueData.deleteOne(query);
-      res.send(result);
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await issueData.deleteOne(query);
+        return res.status(201).json({ success: true, data: result });
+      } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+      }
     });
 
     //get user specific issues
@@ -163,10 +186,64 @@ async function run() {
             "reportedBy.email": email,
           })
           .toArray();
-        res.status(200).json(issues);
+        return res.status(201).json({ success: true, data: issues });;
       } catch (err) {
         console.error("Error fetching issues:", err);
-        res.status(500).json({ error: err.message });
+        return res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // Upvote API
+
+    app.put("/api/issues/:id/upvote", async (req, res) => {
+      try {
+        const { userId } = req.body;
+        const issueId = req.params.id;
+       
+        
+        const issue = await issueData.findOne({
+          _id: new ObjectId(issueId),
+        });
+
+        // Check if already upvoted
+        const hasUpvoted = issue.upvotedBy?.includes(userId);
+
+        if (hasUpvoted) {
+          // Remove upvote
+          await issueData.updateOne(
+            { _id: new ObjectId(issueId) },
+            {
+              $inc: { upvotes: -1 },
+              $pull: { upvotedBy: userId },
+            }
+          );
+
+          return res.json({
+            success: true,
+            message: "Upvote removed",
+            action: "removed",
+          });
+        } else {
+          // Add upvote
+          await issueData.updateOne(
+            { _id: new ObjectId(issueId) },
+            {
+              $inc: { upvotes: 1 },
+              $push: { upvotedBy: userId },
+            }
+          );
+
+          return res.json({
+            success: true,
+            message: "Upvoted",
+            action: "added",
+          });
+        }
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error.message,
+        });
       }
     });
 
@@ -280,3 +357,17 @@ async function run() {
 
 //run ফাংশনকে কল করলাম
 run().catch(console.dir);
+
+/**Extra Functions */
+
+//Tracking Number Generator
+const crypto = require("crypto"); //npm এর বিল্ট-ইন জিনিস
+const { log } = require("console");
+function generateTrack(prefix = "RI") {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const rand = crypto.randomBytes(3).toString("hex").toUpperCase();
+  return `${prefix}-${year}${month}${day}-${rand}`;
+}
