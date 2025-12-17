@@ -49,6 +49,29 @@ app.listen(port, (res) => {
 
 /**......................Express Config Ends....................... */
 
+/**
+ * JWT FB Token Middleware Starts এটা পুরোপুরি JWT না, মূলত Firebase Token দিয়ে করছি
+ */
+  const verifyJWT = async (req, res, next)=>{
+    const token = req?.headers?.authorization?.split(" ")[1]
+    console.log(token);
+    if(!token) return res.status(401).send({message: 'Unauthorized Access!'})
+    try{
+      const decoded= await admin.auth().verifyIdToken(token)
+      req.user = decoded;
+      //req.tokenEmail = decoded.email;
+      console.log(decoded);
+      next();
+    }
+    catch(err){
+      console.log(err);
+      return res.status(401).send({message: 'Unauthorized Access!', err})
+      
+    }
+  }
+
+/** Middleware Ends */
+
 /**......................Database Config Starts....................... */
 //MongoDB এর কাজ শুরু, প্রথমে MongoDB import করবো
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -218,6 +241,36 @@ async function run() {
         console.error("Error fetching issues:", err);
         return res.status(500).json({ success: false, message: err.message });
       }
+    });
+
+    app.get("/api/issues-by-user", verifyJWT, async(req, res)=>{
+      try {
+        const email = req?.user?.email;
+          if(!email){
+            return res.status(401).json({success:false, message:"Unauthorized!"});
+          }
+          const user = await userData.findOne({email});
+          if(!user){
+            return res.status(404).json({ success: false, message: "User not found" });
+          }
+          let filter = {};
+
+          if(user?.role === "admin"){
+            filter = {};
+          }
+          if(user?.role === "staff"){
+            filter = {"assignedTo": email};
+          }
+          if(user?.role === "citizen"){
+            filter = {"reportedBy.email": email};
+          }
+        const result = await issueData.find(filter).toArray();
+        return res.status(200).send(result);
+      } catch (error) {
+        console.log(error);
+        return res.status(500).json({ success: false, message: "Server error" });
+      }
+
     });
 
     // Upvote API
