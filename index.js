@@ -10,6 +10,15 @@ const stripe = require("stripe")(process.env.STRIPE_SEC_KEY);
 
 //console.log(process.env.DB_USER);
 
+// firebase admin
+const admin = require("firebase-admin");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString("utf-8");
+const serviceAccount = JSON.parse(decoded);
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 /**
  * Init App as express
  */
@@ -72,6 +81,24 @@ async function run() {
     app.get("/", (req, res) => {
       res.send("Express Server is Running!");
     });
+
+// app.get("/test-auth", async (req, res) => {
+//   try {
+//     const user = await admin.auth().createUser({
+//       email: `test${Date.now()}@example.com`,
+//       password: "12345678",
+//     });
+
+//     res.json({
+//       uid: user.uid,
+//       email: user.email,
+//     });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
 
     //DB ইউজার ডেটা সেভ করতে
     app.post("/storeuserdata", async (req, res) => {
@@ -302,8 +329,8 @@ async function run() {
         // amount is expected in smallest currency unit, e.g., cents for USD or paisa for BDT if supported
         const session = await stripe.checkout.sessions.create({
           success_url:
-            "http://localhost:5173/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}",
-          cancel_url: "http://localhost:5173/dashboard/payment-cancel",
+            `http://${process.env.CLIENT_URI}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `http://${process.env.CLIENT_URI}/dashboard/payment-cancel`,
           mode: "payment",
           line_items: [
             {
