@@ -13,7 +13,9 @@ const stripe = require("stripe")(process.env.STRIPE_SEC_KEY);
 // firebase admin
 const admin = require("firebase-admin");
 
-const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString("utf-8");
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf-8"
+);
 const serviceAccount = JSON.parse(decoded);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -52,23 +54,21 @@ app.listen(port, (res) => {
 /**
  * JWT FB Token Middleware Starts এটা পুরোপুরি JWT না, মূলত Firebase Token দিয়ে করছি
  */
-  const verifyJWT = async (req, res, next)=>{
-    const token = req?.headers?.authorization?.split(" ")[1]
-    console.log(token);
-    if(!token) return res.status(401).send({message: 'Unauthorized Access!'})
-    try{
-      const decoded= await admin.auth().verifyIdToken(token)
-      req.user = decoded;
-      //req.tokenEmail = decoded.email;
-      console.log(decoded);
-      next();
-    }
-    catch(err){
-      console.log(err);
-      return res.status(401).send({message: 'Unauthorized Access!', err})
-      
-    }
+const verifyJWT = async (req, res, next) => {
+  const token = req?.headers?.authorization?.split(" ")[1];
+  console.log(token);
+  if (!token) return res.status(401).send({ message: "Unauthorized Access!" });
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.user = decoded;
+    //req.tokenEmail = decoded.email;
+    console.log(decoded);
+    next();
+  } catch (err) {
+    console.log(err);
+    return res.status(401).send({ message: "Unauthorized Access!", err });
   }
+};
 
 /** Middleware Ends */
 
@@ -105,24 +105,17 @@ async function run() {
       res.send("Express Server is Running!");
     });
 
-// app.get("/test-auth", async (req, res) => {
-//   try {
-//     const user = await admin.auth().createUser({
-//       email: `test${Date.now()}@example.com`,
-//       password: "12345678",
-//     });
+    //verifyAdmin
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.user?.email;
+      if (!email) return res.status(401).json({ message: "Unauthorized" });
 
-//     res.json({
-//       uid: user.uid,
-//       email: user.email,
-//     });
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
-
-
-
+      const adminUser = await userData.findOne({ email });
+      if (!adminUser || adminUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      next();
+    };
     //DB ইউজার ডেটা সেভ করতে
     app.post("/storeuserdata", async (req, res) => {
       const userInfo = req.body;
@@ -243,34 +236,39 @@ async function run() {
       }
     });
 
-    app.get("/api/issues-by-user", verifyJWT, async(req, res)=>{
+    app.get("/api/issues-by-user", verifyJWT, async (req, res) => {
       try {
         const email = req?.user?.email;
-          if(!email){
-            return res.status(401).json({success:false, message:"Unauthorized!"});
-          }
-          const user = await userData.findOne({email});
-          if(!user){
-            return res.status(404).json({ success: false, message: "User not found" });
-          }
-          let filter = {};
+        if (!email) {
+          return res
+            .status(401)
+            .json({ success: false, message: "Unauthorized!" });
+        }
+        const user = await userData.findOne({ email });
+        if (!user) {
+          return res
+            .status(404)
+            .json({ success: false, message: "User not found" });
+        }
+        let filter = {};
 
-          if(user?.role === "admin"){
-            filter = {};
-          }
-          if(user?.role === "staff"){
-            filter = {"assignedTo": email};
-          }
-          if(user?.role === "citizen"){
-            filter = {"reportedBy.email": email};
-          }
+        if (user?.role === "admin") {
+          filter = {};
+        }
+        if (user?.role === "staff") {
+          filter = { "assignedStaff.email": email };
+        }
+        if (user?.role === "citizen") {
+          filter = { "reportedBy.email": email };
+        }
         const result = await issueData.find(filter).toArray();
         return res.status(200).send(result);
       } catch (error) {
         console.log(error);
-        return res.status(500).json({ success: false, message: "Server error" });
+        return res
+          .status(500)
+          .json({ success: false, message: "Server error" });
       }
-
     });
 
     // Upvote API
@@ -279,8 +277,7 @@ async function run() {
       try {
         const { userId } = req.body;
         const issueId = req.params.id;
-       
-        
+
         const issue = await issueData.findOne({
           _id: new ObjectId(issueId),
         });
@@ -381,9 +378,8 @@ async function run() {
         } = req.body;
         // amount is expected in smallest currency unit, e.g., cents for USD or paisa for BDT if supported
         const session = await stripe.checkout.sessions.create({
-          success_url:
-            `http://${process.env.CLIENT_URI}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `http://${process.env.CLIENT_URI}/dashboard/payment-cancel`,
+          success_url: `${process.env.CLIENT_URI}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.CLIENT_URI}/dashboard/payment-cancel`,
           mode: "payment",
           line_items: [
             {
@@ -430,6 +426,361 @@ async function run() {
         res.status(500).send({ Error: err.message });
       }
     });
+    /**All API for Admin */
+    app.get("/api/staff", verifyJWT, async (req, res) => {
+      const staff = await userData
+        .find({ role: "staff", isBlocked: false })
+        .toArray();
+      res.json(staff);
+    });
+    app.get("/api/stafflist", verifyJWT, async (req, res) => {
+      const staff = await userData.find({ role: "staff" }).toArray();
+      res.json(staff);
+    });
+
+    //Issue Assign by Admin
+    app.put("/api/issues/:id/assign", async (req, res) => {
+      const { uid, name, email } = req.body;
+
+      await issueData.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $set: {
+            assignedStaff: { uid, name, email },
+            status: "Assigned to Staff", // Status remains pending until staff starts
+          },
+          $push: {
+            timeline: {
+              action: "Staff Assigned",
+              message: `Issue assigned to ${name}`,
+              updatedBy: "Admin",
+              timestamp: new Date(),
+            },
+          },
+        }
+      );
+
+      res.json({ success: true });
+    });
+
+    //Issue Reject by Admin
+    app.put("/api/issues/:id/reject", async (req, res) => {
+      await issueData.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $set: { status: "Rejected" },
+          $push: {
+            timeline: {
+              action: "Issue Rejected",
+              message: "Issue rejected by admin",
+              updatedBy: "Admin",
+              timestamp: new Date(),
+            },
+          },
+        }
+      );
+
+      res.json({ success: true });
+    });
+
+    //Create Staff API
+    app.post("/api/create-staff", verifyJWT, verifyAdmin, async (req, res) => {
+      let createdUid = null;
+
+      try {
+        const { name, email, password, imgURL } = req.body;
+
+        if (!name || !email || !password) {
+          return res
+            .status(400)
+            .json({ message: "name, email, password required" });
+        }
+        if (String(password).length < 6) {
+          return res
+            .status(400)
+            .json({ message: "Password must be at least 6 characters" });
+        }
+
+        // 1) Firebase Auth user create (server side)
+        const userRecord = await admin.auth().createUser({
+          email,
+          password,
+          displayName: name,
+          photoURL:
+            imgURL ||
+            "https://i.ibb.co/TDrgpc1p/character-avatar-isolated-729149-194801.jpg",
+        });
+
+        createdUid = userRecord.uid;
+
+        // 2) MongoDB insert (Never store password!)
+        const doc = {
+          uid: userRecord.uid,
+          name,
+          email: userRecord.email,
+          imgURL: userRecord.photoURL,
+          role: "staff",
+          createdAt: new Date(),
+          isBlocked: false,
+          isPremium: true,
+        };
+
+        const existing = await userData.findOne({ email });
+        if (existing) {
+          // Firebase এ user তৈরি হয়ে গেছে, তাই conflict হলে rollback
+          await admin.auth().deleteUser(userRecord.uid);
+          return res.status(409).json({ message: "User already exists in DB" });
+        }
+
+        await userData.insertOne(doc);
+
+        return res.status(201).json({
+          message: "Staff created successfully",
+          uid: doc.uid,
+          email: doc.email,
+        });
+      } catch (err) {
+        // rollback if Firebase user created but DB failed
+        if (createdUid) {
+          try {
+            await admin.auth().deleteUser(createdUid);
+          } catch (_) {}
+        }
+        return res.status(500).json({ error: err.message });
+      }
+    });
+    //Staff Block/Unblock
+    app.patch(
+      "/api/staff/:uid/block",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { uid } = req.params;
+          const { isBlocked } = req.body;
+
+          const result = await userData.updateOne(
+            { uid },
+            { $set: { isBlocked: Boolean(isBlocked) } },
+            { upsert: false }
+          );
+
+          if (result.matchedCount === 0) {
+            return res.status(404).json({ message: "Staff not found" });
+          }
+
+          res.json({ success: true });
+        } catch (err) {
+          res.status(500).json({ message: err.message });
+        }
+      }
+    );
+    //Staff Delete
+    app.delete("/api/staff/:uid", verifyJWT, verifyAdmin, async (req, res) => {
+      try {
+        const { uid } = req.params;
+
+        // 1) DB delete
+        const dbRes = await userData.deleteOne({ uid });
+
+        // 2) Firebase Auth delete (uid থাকলে)
+        try {
+          await admin.auth().deleteUser(uid);
+        } catch (e) {
+          // যদি firebase এ না থাকে তাও DB delete হয়ে গেছে—optional: handle/log
+          console.log("Firebase delete warning:", e.message);
+        }
+
+        if (dbRes.deletedCount === 0) {
+          return res.status(404).json({ message: "Staff not found in DB" });
+        }
+
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    //Get Users List
+    app.get("/api/users", verifyJWT, verifyAdmin, async (req, res) => {
+      try {
+        const { role, q } = req.query;
+
+        const filter = {};
+        if (role && role !== "all") filter.role = role;
+
+        if (q) {
+          const regex = new RegExp(String(q), "i");
+          filter.$or = [{ name: regex }, { email: regex }, { uid: regex }];
+        }
+
+        filter.role = { $nin: ["admin", "staff"] };
+
+        const users = await userData
+          .find(filter)
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.status(200).json(users);
+      } catch (err) {
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    //User Block Unblock
+    app.patch(
+      "/api/users/:uid/block",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { uid } = req.params;
+          const { isBlocked } = req.body;
+
+          if (typeof isBlocked !== "boolean") {
+            return res
+              .status(400)
+              .json({ message: "isBlocked must be boolean" });
+          }
+
+          const result = await userData.updateOne(
+            { uid },
+            { $set: { isBlocked } },
+            { upsert: false }
+          );
+
+          if (result.matchedCount === 0) {
+            return res.status(404).json({ message: "User not found" });
+          }
+
+          res.status(200).json({ success: true, uid, isBlocked });
+        } catch (err) {
+          res.status(500).json({ message: err.message });
+        }
+      }
+    );
+
+    app.delete("/api/users/:uid", verifyJWT, verifyAdmin, async (req, res) => {
+      try {
+        const { uid } = req.params;
+
+        const dbRes = await userData.deleteOne({ uid });
+
+        try {
+          await admin.auth().deleteUser(uid);
+        } catch (e) {
+          console.log("Firebase delete warning:", e?.message);
+        }
+
+        if (dbRes.deletedCount === 0) {
+          return res.status(404).json({ message: "User not found in DB" });
+        }
+
+        res.status(200).json({ success: true, uid });
+      } catch (err) {
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    /** API For Staff */
+    //get issue data assign to staff
+    app.get("/api/get-assigned-issues", verifyJWT, async (req, res) => {
+      try {
+        const staffEmail = req.user?.email;
+        if (!staffEmail) {
+          return res.status(401).json({ message: "Unauthorized" });
+        }
+
+        const issues = await issueData
+          .find({ "assignedStaff.email": staffEmail })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        return res.status(200).json(issues);
+      } catch (err) {
+        return res.status(500).json({ message: err.message });
+      }
+    });
+
+    //Resolve Action by Staff
+    app.patch("/api/issues/:id/status", verifyJWT, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const staffEmail = req.user?.email;
+    const { status: nextStatus } = req.body;
+
+    if (!staffEmail) return res.status(401).json({ message: "Unauthorized" });
+    if (!nextStatus) return res.status(400).json({ message: "status is required" });
+
+    // 1) Issue must be assigned to this staff
+    const issue = await issueData.findOne({
+      _id: new ObjectId(id),
+      "assignedStaff.email": staffEmail,
+    });
+
+    if (!issue) {
+      return res.status(403).json({ message: "Forbidden: Not assigned to you" });
+    }
+
+    // 2) Transition rules (আপনার requirement অনুযায়ী)
+    // "Assigned to Staff" কে Pending equivalent ধরে নিচ্ছি
+    const current = issue.status;
+
+    const normalize = (s) => (s === "Assigned to Staff" ? "Pending" : s);
+
+    const allowedNextMap = {
+      Pending: ["In-progress"],
+      "In-progress": ["Working"],
+      Working: ["Resolved"],
+      Resolved: ["Closed"],
+      Closed: [],
+    };
+
+    const currentNorm = normalize(current);
+    const allowedNext = allowedNextMap[currentNorm] || [];
+
+    if (!allowedNext.includes(nextStatus)) {
+      return res.status(400).json({
+        message: `Invalid transition: ${current} -> ${nextStatus}`,
+        currentStatus: current,
+        allowedNext,
+      });
+    }
+
+    // 3) Update status + add timeline tracking record
+    const timelineRecord = {
+      action: "Status Changed",
+      message: `Status changed: ${current} -> ${nextStatus}`,
+      updatedBy: staffEmail,
+      timestamp: new Date(),
+    };
+
+    const result = await issueData.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: { status: nextStatus },
+        $push: { timeline: timelineRecord },
+      },
+      { upsert: false }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: "Issue not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      id,
+      prevStatus: current,
+      status: nextStatus,
+      timelineRecord,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+
+
   } catch (err) {
     console.error(err);
   }
