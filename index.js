@@ -324,6 +324,20 @@ async function run() {
       }
     });
 
+    //Latest Issue to show in homepage, 
+    // API
+    app.get("/api/latest-resolved-issues", async (req, res) => {
+      try{
+      const result = await issueData.find({ status: 'Resolved'}).sort({createdAt: -1}).limit(6).toArray();
+      res.send(result);
+      }
+      catch(err){
+        console.log(err);
+        res.status(500).send({ message: 'Error fetching latest issues' });
+      }
+
+    });
+
     /** Issue CURD API Ends */
     /**......................API Section Ends....................... */
 
@@ -402,6 +416,114 @@ async function run() {
         return res.status(400).json({ error: message });
       }
     });
+
+    //STRIPE API for Issue Boost
+    // Boost Issue - create stripe session
+    app.post(
+      "/api/boost/create-checkout-session",
+      verifyJWT,
+      async (req, res) => {
+        try {
+          const { issueId } = req.body;
+          const email = req.user?.email;
+          const uid = req.user?.uid;
+
+          if (!issueId)
+            return res.status(400).json({ message: "issueId required" });
+          if (!email) return res.status(401).json({ message: "Unauthorized" });
+
+          const issue = await issueData.findOne({ _id: new ObjectId(issueId) });
+          if (!issue)
+            return res.status(404).json({ message: "Issue not found" });
+
+          if (issue.isBoosted) {
+            return res.status(400).json({ message: "Issue already boosted" });
+          }
+
+          // চাইলে owner restriction দিতে পারো:
+          // if (issue.reportedBy?.uid !== uid) return res.status(403).json({ message: "Forbidden" });
+
+          const amount = 100; // USD cents হিসেবে ধরলে 100 = $1.00, তুমি চাইলে 10000 = $100.00
+          const name = `Boost Issue - ${issue.tracking || issue.title}`;
+
+          const session = await stripe.checkout.sessions.create({
+            success_url: `${process.env.CLIENT_URI}/dashboard/boost-success?session_id={CHECKOUT_SESSION_ID}&issueId=${issueId}`,
+            cancel_url: `${process.env.CLIENT_URI}/issue/${issueId}`,
+            mode: "payment",
+            line_items: [
+              {
+                price_data: {
+                  currency: "usd",
+                  product_data: { name },
+                  unit_amount: amount,
+                },
+                quantity: 1,
+              },
+            ],
+          });
+
+          return res.status(200).json({ url: session.url, id: session.id });
+        } catch (err) {
+          console.error("Boost session error:", err);
+          return res.status(400).json({ error: err.message });
+        }
+      }
+    );
+
+    //After payment update to DB
+
+    // Boost Issue - store payment + mark boosted
+    app.patch("/api/issues/:id/boost", verifyJWT, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { paymentSessionID } = req.body;
+
+        const email = req.user?.email;
+        const uid = req.user?.uid;
+
+        if (!email) return res.status(401).json({ message: "Unauthorized" });
+        if (!paymentSessionID) {
+          return res.status(400).json({ message: "paymentSessionID required" });
+        }
+
+        const issue = await issueData.findOne({ _id: new ObjectId(id) });
+        if (!issue) return res.status(404).json({ message: "Issue not found" });
+
+        if (issue.isBoosted) {
+          return res
+            .status(200)
+            .json({ success: true, message: "Already boosted" });
+        }
+
+        const updateDoc = {
+          $set: {
+            isBoosted: true,
+            boostPaymentHash: paymentSessionID,
+            boostPaymentDate: new Date(),
+            boostedBy: { uid, email },
+          },
+          $push: {
+            timeline: {
+              action: "Issue Boosted",
+              message: `Boost payment completed (session: ${paymentSessionID})`,
+              updatedBy: email,
+              timestamp: new Date(),
+            },
+          },
+        };
+
+        const result = await issueData.updateOne(
+          { _id: new ObjectId(id) },
+          updateDoc,
+          { upsert: false }
+        );
+
+        return res.status(200).json({ success: true, data: result });
+      } catch (err) {
+        return res.status(500).json({ message: err.message });
+      }
+    });
+
     /** STRIPE API Ends */
 
     //store premium sub data
@@ -427,41 +549,46 @@ async function run() {
       }
     });
     /**All API for Admin */
-    app.get("/api/staff", verifyJWT, async (req, res) => {
+    app.get("/api/staff", verifyJWT, verifyAdmin, async (req, res) => {
       const staff = await userData
         .find({ role: "staff", isBlocked: false })
         .toArray();
       res.json(staff);
     });
-    app.get("/api/stafflist", verifyJWT, async (req, res) => {
+    app.get("/api/stafflist", verifyJWT, verifyAdmin, async (req, res) => {
       const staff = await userData.find({ role: "staff" }).toArray();
       res.json(staff);
     });
 
     //Issue Assign by Admin
-    app.put("/api/issues/:id/assign", async (req, res) => {
-      const { uid, name, email } = req.body;
+    app.put(
+      "/api/issues/:id/assign",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const { uid, name, email } = req.body;
 
-      await issueData.updateOne(
-        { _id: new ObjectId(req.params.id) },
-        {
-          $set: {
-            assignedStaff: { uid, name, email },
-            status: "Assigned to Staff", // Status remains pending until staff starts
-          },
-          $push: {
-            timeline: {
-              action: "Staff Assigned",
-              message: `Issue assigned to ${name}`,
-              updatedBy: "Admin",
-              timestamp: new Date(),
+        await issueData.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          {
+            $set: {
+              assignedStaff: { uid, name, email },
+              status: "Assigned to Staff", // Status remains pending until staff starts
             },
-          },
-        }
-      );
+            $push: {
+              timeline: {
+                action: "Staff Assigned",
+                message: `Issue assigned to ${name}`,
+                updatedBy: "Admin",
+                timestamp: new Date(),
+              },
+            },
+          }
+        );
 
-      res.json({ success: true });
-    });
+        res.json({ success: true });
+      }
+    );
 
     //Issue Reject by Admin
     app.put("/api/issues/:id/reject", async (req, res) => {
@@ -703,84 +830,85 @@ async function run() {
 
     //Resolve Action by Staff
     app.patch("/api/issues/:id/status", verifyJWT, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const staffEmail = req.user?.email;
-    const { status: nextStatus } = req.body;
+      try {
+        const id = req.params.id;
+        const staffEmail = req.user?.email;
+        const { status: nextStatus } = req.body;
 
-    if (!staffEmail) return res.status(401).json({ message: "Unauthorized" });
-    if (!nextStatus) return res.status(400).json({ message: "status is required" });
+        if (!staffEmail)
+          return res.status(401).json({ message: "Unauthorized" });
+        if (!nextStatus)
+          return res.status(400).json({ message: "status is required" });
 
-    // 1) Issue must be assigned to this staff
-    const issue = await issueData.findOne({
-      _id: new ObjectId(id),
-      "assignedStaff.email": staffEmail,
+        // 1) Issue must be assigned to this staff
+        const issue = await issueData.findOne({
+          _id: new ObjectId(id),
+          "assignedStaff.email": staffEmail,
+        });
+
+        if (!issue) {
+          return res
+            .status(403)
+            .json({ message: "Forbidden: Not assigned to you" });
+        }
+
+        // 2) Transition rules (আপনার requirement অনুযায়ী)
+        // "Assigned to Staff" কে Pending equivalent ধরে নিচ্ছি
+        const current = issue.status;
+
+        const normalize = (s) => (s === "Assigned to Staff" ? "Pending" : s);
+
+        const allowedNextMap = {
+          Pending: ["In-progress"],
+          "In-progress": ["Working"],
+          Working: ["Resolved"],
+          Resolved: ["Closed"],
+          Closed: [],
+        };
+
+        const currentNorm = normalize(current);
+        const allowedNext = allowedNextMap[currentNorm] || [];
+
+        if (!allowedNext.includes(nextStatus)) {
+          return res.status(400).json({
+            message: `Invalid transition: ${current} -> ${nextStatus}`,
+            currentStatus: current,
+            allowedNext,
+          });
+        }
+
+        // 3) Update status + add timeline tracking record
+        const timelineRecord = {
+          action: "Status Changed",
+          message: `Status changed: ${current} -> ${nextStatus}`,
+          updatedBy: staffEmail,
+          timestamp: new Date(),
+        };
+
+        const result = await issueData.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: { status: nextStatus },
+            $push: { timeline: timelineRecord },
+          },
+          { upsert: false }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Issue not found" });
+        }
+
+        return res.status(200).json({
+          success: true,
+          id,
+          prevStatus: current,
+          status: nextStatus,
+          timelineRecord,
+        });
+      } catch (err) {
+        return res.status(500).json({ message: err.message });
+      }
     });
-
-    if (!issue) {
-      return res.status(403).json({ message: "Forbidden: Not assigned to you" });
-    }
-
-    // 2) Transition rules (আপনার requirement অনুযায়ী)
-    // "Assigned to Staff" কে Pending equivalent ধরে নিচ্ছি
-    const current = issue.status;
-
-    const normalize = (s) => (s === "Assigned to Staff" ? "Pending" : s);
-
-    const allowedNextMap = {
-      Pending: ["In-progress"],
-      "In-progress": ["Working"],
-      Working: ["Resolved"],
-      Resolved: ["Closed"],
-      Closed: [],
-    };
-
-    const currentNorm = normalize(current);
-    const allowedNext = allowedNextMap[currentNorm] || [];
-
-    if (!allowedNext.includes(nextStatus)) {
-      return res.status(400).json({
-        message: `Invalid transition: ${current} -> ${nextStatus}`,
-        currentStatus: current,
-        allowedNext,
-      });
-    }
-
-    // 3) Update status + add timeline tracking record
-    const timelineRecord = {
-      action: "Status Changed",
-      message: `Status changed: ${current} -> ${nextStatus}`,
-      updatedBy: staffEmail,
-      timestamp: new Date(),
-    };
-
-    const result = await issueData.updateOne(
-      { _id: new ObjectId(id) },
-      {
-        $set: { status: nextStatus },
-        $push: { timeline: timelineRecord },
-      },
-      { upsert: false }
-    );
-
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ message: "Issue not found" });
-    }
-
-    return res.status(200).json({
-      success: true,
-      id,
-      prevStatus: current,
-      status: nextStatus,
-      timelineRecord,
-    });
-  } catch (err) {
-    return res.status(500).json({ message: err.message });
-  }
-});
-
-
-
   } catch (err) {
     console.error(err);
   }
