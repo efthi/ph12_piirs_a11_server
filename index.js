@@ -117,7 +117,7 @@ async function run() {
       next();
     };
     //DB ইউজার ডেটা সেভ করতে
-    app.post("/storeuserdata", async (req, res) => {
+    app.post("/storeuserdata", verifyJWT, async (req, res) => {
       const userInfo = req.body;
       console.log(
         userInfo.uid,
@@ -129,21 +129,6 @@ async function run() {
         userInfo.isBlocked
       );
       const result = await userData.insertOne(userInfo);
-      res.send(result);
-    });
-
-    //test api
-    app.get("/get-test", async (req, res) => {
-      const packet = issueData.find(); //packet জাস্ট নাম দেওয়া হয়েছে
-      const result = await packet.toArray();
-      res.send(result);
-    });
-
-    //test api
-    app.post("/get-post", async (req, res) => {
-      const newIssue = req.body;
-      console.log(newIssue);
-      const result = await issueData.insertOne(newIssue);
       res.send(result);
     });
 
@@ -324,18 +309,20 @@ async function run() {
       }
     });
 
-    //Latest Issue to show in homepage, 
+    //Latest Issue to show in homepage,
     // API
     app.get("/api/latest-resolved-issues", async (req, res) => {
-      try{
-      const result = await issueData.find({ status: 'Resolved'}).sort({createdAt: -1}).limit(6).toArray();
-      res.send(result);
-      }
-      catch(err){
+      try {
+        const result = await issueData
+          .find({ status: "Resolved" })
+          .sort({ createdAt: -1 })
+          .limit(6)
+          .toArray();
+        res.send(result);
+      } catch (err) {
         console.log(err);
-        res.status(500).send({ message: 'Error fetching latest issues' });
+        res.status(500).send({ message: "Error fetching latest issues" });
       }
-
     });
 
     /** Issue CURD API Ends */
@@ -523,6 +510,47 @@ async function run() {
         return res.status(500).json({ message: err.message });
       }
     });
+
+    //Get Payment history list
+    app.get(
+      "/api/payment-history", verifyJWT, verifyAdmin, async (req, res) => {
+        try {
+          const limit = Math.min(parseInt(req.query.limit || "20", 10), 100);
+          const starting_after = req.query.starting_after;
+
+          const params = { limit };
+          if (starting_after) params.starting_after = starting_after;
+
+          const paymentIntents = await stripe.paymentIntents.list(params);
+
+          // UI-friendly shape
+          const data = paymentIntents.data.map((pi) => ({
+            id: pi.id,
+            amount: pi.amount, // cents
+            currency: pi.currency,
+            status: pi.status,
+            created: pi.created, // unix sec
+            customer: pi.customer,
+            description: pi.description,
+            latest_charge: pi.latest_charge,
+            metadata: pi.metadata,
+          }));
+
+          res.json({
+            data,
+            has_more: paymentIntents.has_more,
+            next_cursor: paymentIntents.data.at(-1)?.id || null,
+          });
+        } catch (e) {
+          console.error("Stripe error", e);
+          res.status(500).json({
+            message: e?.raw?.message || e.message || "Stripe error",
+            code: e.code,
+            type: e.type,
+          });
+        }
+      }
+    );
 
     /** STRIPE API Ends */
 
