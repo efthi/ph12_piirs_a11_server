@@ -97,8 +97,8 @@ async function run() {
     const issueData = piirsDB.collection("issueData"); // ২য় collection বানাইলাম, ....
     //await issueData.createIndex({tracking:1}, {unique: true}); // এই লাইনটা সার্চ করে যুক্ত করা হয়েছে যাতে ট্র্যাকিং নাম্বার জেনারেটর ফাংশন থেকে জেনারেট হওয়া নাম্বার ইউনিক থাকে
     //Connection test code
-    await client.db("admin").command({ ping: 1 });
-    console.log("pinged your deployment. Connected to MongoDB!");
+    //await client.db("admin").command({ ping: 1 });
+    //console.log("pinged your deployment. Connected to MongoDB!");
 
     //সার্ভার রুট পেইজ
     app.get("/", (req, res) => {
@@ -117,7 +117,7 @@ async function run() {
       next();
     };
     //DB ইউজার ডেটা সেভ করতে
-    app.post("/storeuserdata", verifyJWT, async (req, res) => {
+    app.post("/storeuserdata", async (req, res) => {
       const userInfo = req.body;
       console.log(
         userInfo.uid,
