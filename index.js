@@ -131,6 +131,60 @@ async function run() {
       const result = await userData.insertOne(userInfo);
       res.send(result);
     });
+    
+    app.post("/api/social-login", async (req, res) => {
+  try {
+    const uid = req.user?.uid;
+    const email = req.user?.email;
+
+    if (!uid || !email) {
+      return res.status(401).json({ message: "Unauthorized: invalid token" });
+    }
+
+    const { name, imgURL } = req.body || {};
+
+    const existing = await userData.findOne({ email });
+
+    if (existing) {
+      await userData.updateOne(
+        { email },
+        {
+          $set: {
+            lastLoginAt: new Date(),
+            name: name || existing.name,
+            imgURL: imgURL || existing.imgURL,
+          },
+        }
+      );
+      return res.json({ ok: true, action: "login", userExists: true });
+    }
+
+    const doc = {
+      uid,
+      email,
+      name: name || null,
+      imgURL: imgURL || null,
+      role: "citizen",
+      createdAt: new Date(),
+      lastLoginAt: new Date(),
+      isBlocked: false,
+      isPremium: false,
+    };
+
+    await userData.insertOne(doc);
+    return res.json({ ok: true, action: "created", userExists: false });
+  } catch (err) {
+    console.error("SOCIAL LOGIN ERROR:", err);
+
+    // duplicate key হলে (unique index থাকলে) এটাও 500 না করে 409 দাও
+    if (err?.code === 11000) {
+      return res.status(409).json({ message: "User already exists" });
+    }
+
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+});
+
 
     /** Issue CURD API Starts */
     //create a issue
@@ -513,7 +567,10 @@ async function run() {
 
     //Get Payment history list
     app.get(
-      "/api/payment-history", verifyJWT, verifyAdmin, async (req, res) => {
+      "/api/payment-history",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
         try {
           const limit = Math.min(parseInt(req.query.limit || "20", 10), 100);
           const starting_after = req.query.starting_after;
